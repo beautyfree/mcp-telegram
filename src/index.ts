@@ -38,3 +38,19 @@ main().catch((err) => {
   logger.error('Fatal error in stdio entry', err);
   process.exit(1);
 });
+
+// Exit reliably when the MCP client is gone. Without this, the Telegram client
+// keeps the Node event loop alive after the parent session dies, and orphaned
+// server processes have been observed spinning at 100% CPU for hours.
+process.stdin.on('end', () => process.exit(0));
+process.stdin.on('close', () => process.exit(0));
+process.on('SIGTERM', () => process.exit(0));
+process.on('SIGINT', () => process.exit(0));
+
+const initialPpid = process.ppid;
+setInterval(() => {
+  // Parent changed (reparented after the client process died) => orphan. Exit.
+  // Comparing to 1 is unreliable: on systemd systems orphans are reparented to
+  // the nearest subreaper, not to init.
+  if (process.ppid !== initialPpid) process.exit(0);
+}, 60_000).unref();
